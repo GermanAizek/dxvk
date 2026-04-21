@@ -220,6 +220,7 @@ namespace dxvk {
   struct DxvkShaderLinkage {
     bool fsDualSrcBlend  = false;
     bool fsFlatShading   = false;
+    bool sampleLocations = false;
     bool semanticIo      = false;
 
     VkPrimitiveTopology inputTopology = VK_PRIMITIVE_TOPOLOGY_MAX_ENUM;
@@ -396,7 +397,7 @@ namespace dxvk {
     
   public:
 
-    DxvkShaderStageInfo(const DxvkDevice* device);
+    DxvkShaderStageInfo(const DxvkDevice* device, const DxvkPipelineLayout* layout);
 
     DxvkShaderStageInfo             (DxvkShaderStageInfo&& other) = delete;
     DxvkShaderStageInfo& operator = (DxvkShaderStageInfo&& other) = delete;
@@ -456,6 +457,9 @@ namespace dxvk {
       ShaderModuleIdentifier    moduleIdentifier;
       VkShaderModuleCreateInfo  moduleInfo;
     };
+
+    VkShaderDescriptorSetAndBindingMappingInfoEXT   m_mapping = { };
+    void*                                           m_next = nullptr;
 
     std::array<SpirvCodeBuffer,                 5>  m_codeBuffers;
     std::array<ShaderModuleInfo,                5>  m_moduleInfos = { };
@@ -697,6 +701,8 @@ namespace dxvk {
     bool canCreatePipelineLibraryForShader(DxvkShader& shader, bool needsPosition) const;
 
     bool canUsePipelineCacheControl() const;
+
+    const DxvkPipelineLayout* getPipelineLibraryLayout() const;
 
   };
   

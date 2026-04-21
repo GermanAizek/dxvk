@@ -134,7 +134,7 @@ namespace dxvk {
     }} },
     /* Fifa '19+: Binds typed buffer SRV to shader *
      * that expects raw/structured buffer SRV      */
-    { R"(\\FIFA(19|[2-9][0-9])(_demo)?\.exe$)", {{
+    { R"(\\FIFA(19|20|21|22)(_demo)?\.exe$)", {{
       { "dxvk.useRawSsbo",                  "True" },
     }} },
     /* Resident Evil 2/3: Ignore WaW hazards      */
@@ -275,9 +275,10 @@ namespace dxvk {
     { R"(\\armoredwarfare\.exe$)", {{
       { "d3d11.cachedDynamicResources",        "c" },
     }} },
-    /* Nioh 2                                     */
+    /* Nioh 2 - Fixes some fires looking glitchy  */
     { R"(\\nioh2\.exe$)", {{
       { "dxgi.deferSurfaceCreation",        "True" },
+      { "dxvk.zeroMappedMemory",            "True" },
     }} },
     /* Crazy Machines 3 - crashes on long device  *
      * descriptions                               */
@@ -497,6 +498,15 @@ namespace dxvk {
     { R"(\\Rapture_Release\.exe$)", {{
       { "d3d11.cachedDynamicResources",        "a" },
     }} },
+    /* Total War Pharaoh Dynasties: Broken menu   *
+     * because the game doesn't manage to respect *
+     * pitch for an A8_UNORM image. Resolves are  *
+     * not needed because the game dynamically    *
+     * checks sample count in affected shaders.   */
+    { R"(\\Pharaoh\.exe$)", {{
+      { "d3d11.disableDirectImageMapping",  "True" },
+      { "dxvk.enableImplicitResolves",     "False" },
+    }} },
 
     /**********************************************/
     /* D3D9 GAMES                                 */
@@ -504,7 +514,6 @@ namespace dxvk {
 
     /* A Hat in Time                              */
     { R"(\\HatinTimeGame\.exe$)", {{
-      { "d3d9.strictPow",                  "False" },
       { "d3d9.lenientClear",                "True" },
     }} },
     /* Anarchy Online                             */
@@ -1146,6 +1155,11 @@ namespace dxvk {
      * Fixes a crash on resolution change         */
     { R"(\\Pirates!\.exe$)", {{
       { "d3d9.countLosableResources",      "False" },
+    }} },
+    /* Warhammer 40,000: Dawn of War DE           *
+     * Fixes occasional vertex explosions         */
+    { R"(\\W40k(_gog)?\.exe$)", {{
+      { "dxvk.zeroMappedMemory",            "True" },
     }} },
 
     /**********************************************/

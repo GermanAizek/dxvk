@@ -15,8 +15,10 @@ namespace dxvk {
 
 
   bool DxvkShaderLinkage::eq(const DxvkShaderLinkage& other) const {
-    bool eq = fsDualSrcBlend == other.fsDualSrcBlend
-           && fsFlatShading == other.fsFlatShading;
+    bool eq = fsDualSrcBlend  == other.fsDualSrcBlend
+           && fsFlatShading   == other.fsFlatShading
+           && sampleLocations == other.sampleLocations
+           && semanticIo      == other.semanticIo;
 
     if (eq) {
       eq = prevStageOutputs.getVarCount() == other.prevStageOutputs.getVarCount();
@@ -40,6 +42,8 @@ namespace dxvk {
     DxvkHashState hash;
     hash.add(uint32_t(fsDualSrcBlend));
     hash.add(uint32_t(fsFlatShading));
+    hash.add(uint32_t(sampleLocations));
+    hash.add(uint32_t(semanticIo));
 
     for (uint32_t i = 0; i < prevStageOutputs.getVarCount(); i++)
       hash.add(prevStageOutputs.getVar(i).hash());
@@ -74,9 +78,12 @@ namespace dxvk {
 
   
 
-  DxvkShaderStageInfo::DxvkShaderStageInfo(const DxvkDevice* device)
+  DxvkShaderStageInfo::DxvkShaderStageInfo(const DxvkDevice* device, const DxvkPipelineLayout* layout)
   : m_device(device) {
-
+    if (m_device->canUseDescriptorHeap()) {
+      m_mapping = layout->getMappingInfo();
+      m_next = &m_mapping;
+    }
   }
 
   void DxvkShaderStageInfo::addStage(
@@ -88,7 +95,7 @@ namespace dxvk {
     codeBuffer = std::move(code);
 
     auto& moduleInfo = m_moduleInfos[m_stageCount].moduleInfo;
-    moduleInfo = { VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO };
+    moduleInfo = { VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO, m_next };
     moduleInfo.codeSize = codeBuffer.size();
     moduleInfo.pCode = codeBuffer.data();
 
@@ -301,7 +308,7 @@ namespace dxvk {
 
   DxvkShaderPipelineLibraryHandle DxvkShaderPipelineLibrary::compileShaderPipeline(
           VkPipelineCreateFlags2                flags) {
-    DxvkShaderStageInfo stageInfo(m_device);
+    DxvkShaderStageInfo stageInfo(m_device, getPipelineLibraryLayout());
     VkShaderStageFlags stageMask = getShaderStages();
 
     { std::lock_guard lock(m_identifierMutex);
@@ -402,6 +409,9 @@ namespace dxvk {
     VkPipelineCreateFlags2CreateInfo flagsInfo = { VK_STRUCTURE_TYPE_PIPELINE_CREATE_FLAGS_2_CREATE_INFO, &rtInfo };
     flagsInfo.flags = VK_PIPELINE_CREATE_2_LIBRARY_BIT_KHR | flags;
 
+    if (m_device->canUseDescriptorHeap())
+      flagsInfo.flags |= VK_PIPELINE_CREATE_2_DESCRIPTOR_HEAP_BIT_EXT;
+
     if (m_device->canUseDescriptorBuffer())
       flagsInfo.flags |= VK_PIPELINE_CREATE_2_DESCRIPTOR_BUFFER_BIT_EXT;
 
@@ -415,7 +425,7 @@ namespace dxvk {
     info.pViewportState       = &vpInfo;
     info.pRasterizationState  = &rsInfo;
     info.pDynamicState        = &dyInfo;
-    info.layout               = m_layout->getLayout(DxvkPipelineLayoutType::Independent)->getPipelineLayout();
+    info.layout               = getPipelineLibraryLayout()->getPipelineLayout();
     info.basePipelineIndex    = -1;
 
     VkPipeline pipeline = VK_NULL_HANDLE;
@@ -502,6 +512,9 @@ namespace dxvk {
     VkPipelineCreateFlags2CreateInfo flagsInfo = { VK_STRUCTURE_TYPE_PIPELINE_CREATE_FLAGS_2_CREATE_INFO, &rtInfo };
     flagsInfo.flags = VK_PIPELINE_CREATE_2_LIBRARY_BIT_KHR | flags;
 
+    if (m_device->canUseDescriptorHeap())
+      flagsInfo.flags |= VK_PIPELINE_CREATE_2_DESCRIPTOR_HEAP_BIT_EXT;
+
     if (m_device->canUseDescriptorBuffer())
       flagsInfo.flags |= VK_PIPELINE_CREATE_2_DESCRIPTOR_BUFFER_BIT_EXT;
 
@@ -538,12 +551,15 @@ namespace dxvk {
     VkPipelineCreateFlags2CreateInfo flagsInfo = { VK_STRUCTURE_TYPE_PIPELINE_CREATE_FLAGS_2_CREATE_INFO };
     flagsInfo.flags = flags;
 
+    if (m_device->canUseDescriptorHeap())
+      flagsInfo.flags |= VK_PIPELINE_CREATE_2_DESCRIPTOR_HEAP_BIT_EXT;
+
     if (m_device->canUseDescriptorBuffer())
       flagsInfo.flags |= VK_PIPELINE_CREATE_2_DESCRIPTOR_BUFFER_BIT_EXT;
 
     VkComputePipelineCreateInfo info = { VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO };
     info.stage        = *stageInfo.getStageInfos();
-    info.layout       = m_layout->getLayout(DxvkPipelineLayoutType::Merged)->getPipelineLayout();
+    info.layout       = getPipelineLibraryLayout()->getPipelineLayout();
     info.basePipelineIndex = -1;
 
     if (flagsInfo.flags)
@@ -756,6 +772,15 @@ namespace dxvk {
 
     return features.vk13.pipelineCreationCacheControl
         && features.extShaderModuleIdentifier.shaderModuleIdentifier;
+  }
+
+
+  const DxvkPipelineLayout* DxvkShaderPipelineLibrary::getPipelineLibraryLayout() const {
+    DxvkPipelineLayoutType type = m_shaders.findShader(VK_SHADER_STAGE_COMPUTE_BIT)
+      ? DxvkPipelineLayoutType::Merged
+      : DxvkPipelineLayoutType::Independent;
+
+    return m_layout->getLayout(type);
   }
 
 }

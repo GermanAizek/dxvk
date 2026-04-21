@@ -516,7 +516,7 @@ namespace dxvk {
      * \param [in] inheritanceInfo Command buffer inheritance info
      */
     void beginSecondaryCommandBuffer(
-      const VkCommandBufferInheritanceInfo& inheritanceInfo);
+            VkCommandBufferInheritanceInfo inheritanceInfo);
 
     /**
      * \brief Ends secondary command buffer
@@ -601,40 +601,18 @@ namespace dxvk {
     
     void cmdBindDescriptorSets(
             DxvkCmdBuffer             cmdBuffer,
-            VkPipelineBindPoint       pipeline,
-            VkPipelineLayout          pipelineLayout,
-            uint32_t                  firstSet,
-            uint32_t                  descriptorSetCount,
-      const VkDescriptorSet*          descriptorSets) {
-      m_vkd->vkCmdBindDescriptorSets(getCmdBuffer(cmdBuffer),
-        pipeline, pipelineLayout, firstSet, descriptorSetCount,
-        descriptorSets, 0, nullptr);
+      const VkBindDescriptorSetsInfo* info) {
+      m_vkd->vkCmdBindDescriptorSets2KHR(getCmdBuffer(cmdBuffer), info);
     }
 
 
     void cmdSetDescriptorBufferOffsetsEXT(
             DxvkCmdBuffer             cmdBuffer,
-            VkPipelineBindPoint       pipeline,
-            VkPipelineLayout          layout,
-            uint32_t                  firstSet,
-            uint32_t                  setCount,
-      const uint32_t*                 pBufferIndices,
-      const VkDeviceSize*             pOffsets) {
-      m_vkd->vkCmdSetDescriptorBufferOffsetsEXT(getCmdBuffer(cmdBuffer),
-        pipeline, layout, firstSet, setCount, pBufferIndices, pOffsets);
+      const VkSetDescriptorBufferOffsetsInfoEXT* info) {
+      m_vkd->vkCmdSetDescriptorBufferOffsets2EXT(getCmdBuffer(cmdBuffer), info);
     }
 
 
-
-    void cmdBindIndexBuffer(
-            VkBuffer                buffer,
-            VkDeviceSize            offset,
-            VkIndexType             indexType) {
-      m_vkd->vkCmdBindIndexBuffer(getCmdBuffer(),
-        buffer, offset, indexType);
-    }
-    
-    
     void cmdBindIndexBuffer2(
             VkBuffer                buffer,
             VkDeviceSize            offset,
@@ -961,17 +939,19 @@ namespace dxvk {
 
       m_vkd->vkCmdPipelineBarrier2(getCmdBuffer(cmdBuffer), dependencyInfo);
     }
-    
-    
+
+
     void cmdPushConstants(
             DxvkCmdBuffer           cmdBuffer,
-            VkPipelineLayout        layout,
-            VkShaderStageFlags      stageFlags,
-            uint32_t                offset,
-            uint32_t                size,
-      const void*                   pValues) {
-      m_vkd->vkCmdPushConstants(getCmdBuffer(cmdBuffer),
-        layout, stageFlags, offset, size, pValues);
+      const VkPushConstantsInfo*    info) {
+      m_vkd->vkCmdPushConstants2KHR(getCmdBuffer(cmdBuffer), info);
+    }
+
+
+    void cmdPushData(
+            DxvkCmdBuffer           cmdBuffer,
+      const VkPushDataInfoEXT*      info) {
+      m_vkd->vkCmdPushDataEXT(getCmdBuffer(cmdBuffer), info);
     }
 
 
@@ -1120,7 +1100,9 @@ namespace dxvk {
       VkCommandBuffer cmdBuffer = getCmdBuffer();
 
       m_vkd->vkCmdSetSampleLocationsEnableEXT(cmdBuffer, enable);
-      m_vkd->vkCmdSetSampleLocationsEXT(cmdBuffer, sampleLocations);
+
+      if (enable)
+        m_vkd->vkCmdSetSampleLocationsEXT(cmdBuffer, sampleLocations);
     }
 
     void cmdSetScissor(
@@ -1258,6 +1240,20 @@ namespace dxvk {
       m_descriptorSync = std::move(syncHandle);
     }
 
+    void ensureDescriptorHeapBinding() {
+      if (unlikely(m_descriptorHeapInvalidated)) {
+        this->rebindSamplerHeap();
+        this->rebindResourceHeap();
+
+        m_descriptorHeapInvalidated = false;
+      }
+    }
+
+    void invalidateDescriptorHeapBinding() {
+      // Re-bind heaps on next draw/dispatch
+      m_descriptorHeapInvalidated = true;
+    }
+
   private:
     
     DxvkDevice*               m_device;
@@ -1296,6 +1292,8 @@ namespace dxvk {
 
     std::vector<DxvkGraphicsPipeline*> m_pipelines;
 
+    bool m_descriptorHeapInvalidated = false;
+
     force_inline VkCommandBuffer getCmdBuffer() const {
       // Allocation logic will always provide an execution buffer
       return m_cmd.cmdBuffers[uint32_t(DxvkCmdBuffer::ExecBuffer)];
@@ -1331,6 +1329,14 @@ namespace dxvk {
             size_t                        pushDataSize,
       const void*                         pushData);
 
+    void bindResourcesDescriptorHeap(
+            DxvkCmdBuffer                 cmdBuffer,
+      const DxvkPipelineLayout*           layout,
+            uint32_t                      descriptorCount,
+      const DxvkDescriptorWrite*          descriptorInfos,
+            size_t                        pushDataSize,
+      const void*                         pushData);
+
     void bindResourcesDescriptorBuffer(
             DxvkCmdBuffer                 cmdBuffer,
       const DxvkPipelineLayout*           layout,
@@ -1339,7 +1345,15 @@ namespace dxvk {
             size_t                        pushDataSize,
       const void*                         pushData);
 
+    void rebindSamplerHeap();
+
+    void rebindResourceHeap();
+
     void rebindDescriptorBuffers();
+
+    void bindSamplerHeap(VkCommandBuffer cmdBuffer);
+
+    void bindResourceHeap(VkCommandBuffer cmdBuffer);
 
     void bindDescriptorBuffers(VkCommandBuffer cmdBuffer);
 
@@ -1350,6 +1364,14 @@ namespace dxvk {
     void countDescriptorStats(
       const Rc<DxvkResourceDescriptorRange>& range,
             VkDeviceSize                  baseOffset);
+
+    static VkBindHeapInfoEXT getHeapBindInfo(const DxvkDescriptorHeapBindingInfo& heapInfo) {
+      VkBindHeapInfoEXT bindInfo = { VK_STRUCTURE_TYPE_BIND_HEAP_INFO_EXT };
+      bindInfo.heapRange.address = heapInfo.gpuAddress;
+      bindInfo.heapRange.size = heapInfo.bufferSize;
+      bindInfo.reservedRangeSize = heapInfo.reservedSize;
+      return bindInfo;
+    }
 
   };
   
